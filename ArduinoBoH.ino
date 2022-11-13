@@ -1,12 +1,24 @@
-//#include <Adafruit_SleepyDog.h>
 #include <PS3BT.h>
 #include <SPI.h>
 #include <usbhub.h>
 #include <avr/wdt.h>
+#include <Encoder.h>
+
+#define normalbtn ( joystick_buttons[btn_l1] &&  joystick_buttons[btn_l2] &&  joystick_buttons[btn_r1] &&  joystick_buttons[btn_r2])
+#define onL1      (!joystick_buttons[btn_l1] &&  joystick_buttons[btn_l2] &&  joystick_buttons[btn_r1] &&  joystick_buttons[btn_r2])
+#define onL2      ( joystick_buttons[btn_l1] && !joystick_buttons[btn_l2] &&  joystick_buttons[btn_r1] &&  joystick_buttons[btn_r2])
+#define onR1      ( joystick_buttons[btn_l1] &&  joystick_buttons[btn_l2] && !joystick_buttons[btn_r1] &&  joystick_buttons[btn_r2])
+#define onR2      ( joystick_buttons[btn_l1] &&  joystick_buttons[btn_l2] &&  joystick_buttons[btn_r1] && !joystick_buttons[btn_r2])
+#define onL1L2    (!joystick_buttons[btn_l1] && !joystick_buttons[btn_l2] &&  joystick_buttons[btn_r1] &&  joystick_buttons[btn_r2])
+#define onL1R1    (!joystick_buttons[btn_l1] &&  joystick_buttons[btn_l2] && !joystick_buttons[btn_r1] &&  joystick_buttons[btn_r2])
+#define onR1R2    ( joystick_buttons[btn_l1] &&  joystick_buttons[btn_l2] && !joystick_buttons[btn_r1] && !joystick_buttons[btn_r2])
+
 
 USB Usb;
 BTD Btd(&Usb);
 PS3BT PS3(&Btd);
+
+
 
 short stik_data[6] = {0, 0, 0, 0, 0, 0};
 char stik_status = 0;
@@ -40,6 +52,7 @@ char ps = 0;
 long int waktu_skrg;
 long int waktu_dulu;
 
+int8_t timeScale = 0;
 
 int8_t MOTORSHIELD_PWM = 9;
 int8_t MOTORSHIELD_DIR_A = 7;
@@ -49,12 +62,12 @@ int8_t MOTORSHIELD_ENC_A = 2;
 int8_t MOTORSHIELD_ENC_B = 3;
 
 short int targetShield, outputShield;
-short int batasSpeedShield = 100;
+short int batasSpeedShield = 50;
 int encoderShield;
 
-short int kpShield = 5;
-short int kiShield = 0;
-short int kdShield = 0;
+float kpShield = 1;
+float kiShield = 0;
+float kdShield = 0;
 
 short int bacaOutput[5];
 
@@ -63,6 +76,7 @@ short int bacaOutput[5];
 //void motor_shield_control(int16_t target_shield, int16_t enc_shield);
 //void motor_shield_pwm(short int pwm_output_shield);
 
+Encoder encoderMotorShield(MOTORSHIELD_ENC_A, MOTORSHIELD_ENC_B);
 
 void setup(void)
 {
@@ -75,10 +89,10 @@ void setup(void)
   pinMode(13, OUTPUT);
 
   //MOTOR
-  pinMode(MOTORSHIELD_DIR_A, OUTPUT);    //D7
+  pinMode(MOTORSHIELD_DIR_A, OUTPUT;    //D7
   pinMode(MOTORSHIELD_DIR_B, OUTPUT);   //D8
-  pinMode(MOTORSHIELD_ENC_A, INPUT);    //D5
-  pinMode(MOTORSHIELD_ENC_B, INPUT);    //D6
+  pinMode(MOTORSHIELD_ENC_A, INPUT);    //D2 INT
+  pinMode(MOTORSHIELD_ENC_B, INPUT);    //D3 INT
 
   Serial.println("Program Start");
   delay(500);
@@ -113,20 +127,35 @@ void loop(void)
 
       if(!joystick_buttons[btn_l1]){
         Serial.println("l1 euy");
-        targetShield -= 10;
+//        targetShield -= 50;
       }
      
       if(!joystick_buttons[btn_r1]){
         Serial.println("r1 euy");
-        targetShield += 10;
+//        targetShield += 50;
       }
       
       prev_joystick_buff = joystick_buff;
     }
+
+    if (timeScale++ == 1){
+      if(!joystick_buttons[btn_r1]){
+        targetShield += 10;
+      }
+
+        if(!joystick_buttons[btn_l1]){
+        targetShield -= 10;
+      }
+      
+      timeScale = 0;    
+    }
+
+    
   }
 
-  motor_shield_read_enc();
+  encoderShield = encoderMotorShield.read();
   motor_shield_control(targetShield, encoderShield, outputShield);
+//  motor_shield_pwm(outputShield);
 
   Serial.print("enc = ");
   Serial.print(encoderShield);
@@ -176,22 +205,6 @@ void joystick_parsing(){
 
 }
 
-void motor_shield_read_enc(){
-  static int stateA, lastStateA;
-  
-  stateA = digitalRead(MOTORSHIELD_ENC_A);
-
-  if(stateA != lastStateA){
-    if(digitalRead(MOTORSHIELD_ENC_B) != stateA){
-      encoderShield++;
-    }
-    else{
-      encoderShield--;
-    }
-  }
-  lastStateA = stateA;
-}
-
 void motor_shield_control(int16_t target_shield, int16_t enc_shield, short int output){
   static float proportional, integral, derivative;
   static int   error, prev_error, sum_error;
@@ -224,16 +237,34 @@ void motor_shield_control(int16_t target_shield, int16_t enc_shield, short int o
 void motor_shield_pwm(short int pwm_output_shield){
   if (pwm_output_shield >= 0)
   {
-    digitalWrite(MOTORSHIELD_DIR_A, HIGH);
-    digitalWrite(MOTORSHIELD_DIR_B, LOW);
+    digitalWrite(MOTORSHIELD_DIR_A, LOW);
+    digitalWrite(MOTORSHIELD_DIR_B, HIGH);
+
   }
   else if (pwm_output_shield < 0)
   {
-    digitalWrite(MOTORSHIELD_DIR_A, LOW);
-    digitalWrite(MOTORSHIELD_DIR_B, HIGH);
+    digitalWrite(MOTORSHIELD_DIR_A, HIGH);
+    digitalWrite(MOTORSHIELD_DIR_B, LOW);
   }
-  analogWrite(MOTORSHIELD_PWM, pwm_output_shield);
+  analogWrite(MOTORSHIELD_PWM, abs(pwm_output_shield));
   bacaOutput[2] = pwm_output_shield;
+}
+
+// ALVAN COBA - RESOLUSI KURANG
+void motor_shield_read_enc(){
+  static int stateA, lastStateA;
+  
+  stateA = digitalRead(MOTORSHIELD_ENC_A);
+
+  if(stateA != lastStateA){
+    if(digitalRead(MOTORSHIELD_ENC_B) != stateA){
+      encoderShield++;
+    }
+    else{
+      encoderShield--;
+    }
+  }
+  lastStateA = stateA;
 }
 
 
